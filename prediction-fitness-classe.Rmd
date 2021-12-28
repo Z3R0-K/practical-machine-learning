@@ -1,0 +1,133 @@
+---
+title: "untiteld"
+author: "Nikolas Rohrmann"
+date: "12/28/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+## Downloading and cutting the Data 
+
+Here I first downloaded the train and test data. Setting na.strings to "NA", "" and "#DIV/0!" allows me to cut columns that contain only a few or no data points using the commands in lines 22 and 23. Finally, I omitted the first seven columns, as they contained administrative data points that won't help as predictors. 
+
+```{r, echo = TRUE, cache = TRUE}
+
+train <- read.csv("/Users/okc_rapid/Desktop/R/course-project-getting-and-cleaning-data/pml-training.csv", na.strings = c("NA", "", "#DIV/0!"))
+test <- read.csv("/Users/okc_rapid/Desktop/R/course-project-getting-and-cleaning-data/pml-testing.csv", na.strings = c("NA", "", "#DIV/0!"))
+
+train<-train[,colSums(is.na(test)) == 0]
+test <-test[,colSums(is.na(test)) == 0]
+
+train <- train[,-c(1:7)]
+test <- test[, -c(1:7)]
+
+
+```
+
+## Creating a Probe
+
+I created this probe below, because the test data set only contained 20 entries, which is not sufficient to get a reliable prediction for the out of sample error. So that is what I did for cross validation. 
+
+Before I created the data partition harnessing the caret package, I converted classe to a factor, which is necessary for the predictions that I am about to make. 
+
+```{r, echo = TRUE, cache = TRUE}
+library(caret)
+train$classe <- as.factor(train$classe)
+
+set.seed(100)
+outProbe <- createDataPartition(y = train$classe, p = 0.75, list = FALSE)
+training <- train[outProbe,]
+probe <- train[-outProbe,]
+
+```
+
+## Decision Trees 
+
+I wanted to start out with a less sophisticated model to see how it will do. The decision trees turned out to be only decently effective producing an accuracy around 75%.  
+
+```{r, cache = TRUE, echo = TRUE}
+library(rpart)
+
+modelFit1 <- rpart(classe~., data = training, method = "class")
+prediction1 <- predict(modelFit1, probe, type = "class")
+confusionMatrix(prediction1, probe$classe)
+```
+
+## Random Forests
+
+The random forests were better. They yielded a fabulous accuracy: 99,63%. So, the corresponding out of sample error only amounts to 0,07%. The prediction is off on only 5 out of the 4904 cases. 
+
+```{r, cache = TRUE, echo = TRUE}
+library(randomForest)
+modelFit2 <- randomForest(classe ~. , data=training, method="class")
+prediction2 <- predict(modelFit2, newdata = probe)
+confusionMatrix(prediction2, probe$classe)
+
+```
+
+## Boosting
+
+Still, boosting was also introduced as an accurate option in the course, which is why I wanted to try that to. Unfortunately, the prediction it produced  was a data frame that contained the likelihood of each level of the factor variable classe for every entry. Therefore, I used the for loop below to determine the most likely classe respectively and store it in a new data frame. 
+
+If you know a function that can accomplish the same feat, please comment it in your evaluation. Thanks in advance. 
+
+As it turned out, the transformation was not quite worth the effort. The accuracy only amounted to 82.26%. Consequently, the out of sample error is around 17.74%. 
+
+
+```{r, cache = TRUE, echo = TRUE}
+library(gbm)
+modelFit3 <- gbm(classe~., data = training)
+prediction3 <- predict(modelFit3, newdata = probe)
+
+df <- data.frame()
+de < data.frame()
+
+prediction3 <- as.data.frame(prediction3)
+
+for (i in 1:4904){
+  
+  max <- max(prediction3[i,])
+  
+  if(prediction3[i,1] == max){
+    
+    de <- "A"
+    df <- rbind(df, de)
+    }
+  else if(prediction3[i,2] == max){
+    
+    de <- "B"
+    df <- rbind(df, de)
+    }
+  else if (prediction3[i,3] == max){
+    
+    de <- "C"
+    df <- rbind(df, de)
+    }
+  else if (prediction3[i,4] == max){
+    
+    de <- "D"
+    df <- rbind(df, de)
+    }
+  else {
+    de <- "E"
+    df <- rbind(df, de)
+  }
+  
+  
+}
+
+names(df) <- "classe"
+df$classe <- as.factor(df$classe)
+
+confusionMatrix(df$classe, probe$classe)
+
+
+```
+
+## Conclusion
+
+When I started this project, I was actually thinking about creating a voting system that could exploit the strengths of the separate prediction models. However, the random forests' accuracy is clearly superior to the other models, which is why I figured that the voting system would only reduce accuracy. 
